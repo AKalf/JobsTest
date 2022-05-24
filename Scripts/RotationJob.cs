@@ -15,8 +15,6 @@ public struct RotationJob : IJobParallelForTransform {
 
     public void Execute(int index, TransformAccess transform) {
         timeAlive[index] += deltaTime;
-
         transform.rotation = math.mul(transform.rotation, quaternion.AxisAngle(angles[index], speeds[index] * deltaTime));
-
     }
 }

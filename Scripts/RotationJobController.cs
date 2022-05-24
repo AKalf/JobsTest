@@ -11,44 +11,30 @@ public class RotationJobController : MonoBehaviour {
     [SerializeField] GameObject TheCubePrefab = null;
     NativeArray<float> speeds, timeAlive;
     NativeArray<int> lifeSpan;
+    NativeArray<Color> colors;
     NativeArray<float3> angles;
-    NativeArray<float> alphaColor;
     TransformAccessArray transforms;
+
     RotationJob rotationJob;
-    JobHandle handler;
+    JobHandle rotationJobHandler;
+    SpawnManyJob spawnJob;
+    JobHandle spawnJobHandler;
+
     Material[] cubeMatReferences = null;
     float startTime;
     Color c = new Color();
     void Start() {
         transforms = new TransformAccessArray(NumberOfCubes);
-        speeds = new NativeArray<float>(NumberOfCubes, Allocator.TempJob);
-        timeAlive = new NativeArray<float>(NumberOfCubes, Allocator.TempJob);
-        lifeSpan = new NativeArray<int>(NumberOfCubes, Allocator.TempJob);
-        angles = new NativeArray<float3>(NumberOfCubes, Allocator.TempJob);
-        alphaColor = new NativeArray<float>(NumberOfCubes, Allocator.TempJob);
+        speeds = new NativeArray<float>(NumberOfCubes, Allocator.Persistent);
+        timeAlive = new NativeArray<float>(NumberOfCubes, Allocator.Persistent);
+        lifeSpan = new NativeArray<int>(NumberOfCubes, Allocator.Persistent);
+        angles = new NativeArray<float3>(NumberOfCubes, Allocator.Persistent);
+        colors = new NativeArray<Color>(NumberOfCubes, Allocator.Persistent);
         cubeMatReferences = new Material[NumberOfCubes];
-        for (int i = 0; i < NumberOfCubes; i++) {
-            Transform trans = Instantiate(TheCubePrefab).transform;
-            // Position
-            trans.position = new Vector3(UnityEngine.Random.Range(-150, 150), UnityEngine.Random.Range(-150, 150), UnityEngine.Random.Range(-150, 150));
-            // Scale
-            float scale = UnityEngine.Random.Range(0.5f, 5);
-            trans.localScale = Vector3.one * scale;
-            // Colors
-            alphaColor[i] = 1;
-            cubeMatReferences[i] = trans.GetComponent<MeshRenderer>().material;
-            cubeMatReferences[i].color = new Color(UnityEngine.Random.Range(0, 1.0f), UnityEngine.Random.Range(0, 1.0f), UnityEngine.Random.Range(0, 1.0f));
-            // Speed
-            speeds[i] = UnityEngine.Random.Range(0.5f, 5);
-            // Time alive
-            timeAlive[i] = 0;
-            // Life-span
-            lifeSpan[i] = UnityEngine.Random.Range(4, 10);
-            // Angle
-            angles[i] = new float3(UnityEngine.Random.Range(0, 2), UnityEngine.Random.Range(0, 2), UnityEngine.Random.Range(0, 2));
 
-            transforms.Add(trans);
-        }
+
+
+        spawnJob = new SpawnManyJob(angles, speeds, timeAlive, lifeSpan, colors);
         rotationJob = new RotationJob {
             speeds = this.speeds,
             timeAlive = this.timeAlive,
@@ -56,28 +42,53 @@ public class RotationJobController : MonoBehaviour {
             angles = this.angles,
             deltaTime = Time.deltaTime,
         };
+
+
+        spawnJobHandler = spawnJob.Schedule(transforms);
+        spawnJobHandler.Complete();
+        angles = spawnJob.angles;
+        speeds = spawnJob.speeds;
+        timeAlive = spawnJob.timeAlive;
+        lifeSpan = spawnJob.lifeSpan;
+        colors = spawnJob.colors;
+        for (int i = 0; i < NumberOfCubes; i++) {
+            Transform trans = ((GameObject)UnityEditor.PrefabUtility.InstantiatePrefab(TheCubePrefab)).transform;
+            cubeMatReferences[i] = trans.GetComponent<Renderer>().material;
+            transforms.Add(trans);
+            cubeMatReferences[i].color = colors[i];
+        }
+
     }
     void Update() {
         startTime = Time.realtimeSinceStartup;
         rotationJob.deltaTime = Time.deltaTime;
-        handler = rotationJob.Schedule(transforms);
-        handler.Complete();
+        rotationJobHandler = rotationJob.Schedule(transforms, spawnJobHandler);
+        rotationJobHandler.Complete();
         this.timeAlive = rotationJob.timeAlive;
+
+        WhoToFadeJob checkLifeStatus = new WhoToFadeJob {
+            lifeSpans = this.lifeSpan,
+            timeAlive = this.timeAlive
+        };
+        JobHandle handler = checkLifeStatus.Schedule(NumberOfCubes, 124);
+        NativeArray<int> indexes =
         for (int i = 0; i < NumberOfCubes; i++) {
             if (timeAlive[i] < lifeSpan[i])
                 continue;
             else {
 
-                alphaColor[i] -= rotationJob.deltaTime;
                 c = cubeMatReferences[i].color;
-                c.a = alphaColor[i];
+                c.a -= rotationJob.deltaTime;
                 cubeMatReferences[i].color = c;
 
-                if (alphaColor[i] <= 0) {
+                if (cubeMatReferences[i].color.a <= 0) {
+                    //SpawnFew spawnFewJob = new SpawnFew();
+                    //spawnFewJob.Schedule();
+
                     transforms[i].position = new Vector3(UnityEngine.Random.Range(-150, 150), UnityEngine.Random.Range(-150, 150), UnityEngine.Random.Range(-150, 150));
                     transforms[i].localScale = Vector3.one * UnityEngine.Random.Range(0.5f, 5);
                     cubeMatReferences[i].color = new Color(UnityEngine.Random.Range(0, 1.0f), UnityEngine.Random.Range(0, 1.0f), UnityEngine.Random.Range(0, 1.0f));
-                    alphaColor[i] = 1;
+                    colors[i] = cubeMatReferences[i].color;
                     // Speed
                     speeds[i] = UnityEngine.Random.Range(0.5f, 5);
                     rotationJob.speeds[i] = speeds[i];
@@ -100,7 +111,7 @@ public class RotationJobController : MonoBehaviour {
         speeds.Dispose();
         angles.Dispose();
         transforms.Dispose();
-        alphaColor.Dispose();
+        colors.Dispose();
         timeAlive.Dispose();
         lifeSpan.Dispose();
     }
