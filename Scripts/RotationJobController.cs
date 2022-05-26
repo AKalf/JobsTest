@@ -71,7 +71,7 @@ public class RotationJobController : MonoBehaviour {
             timeAlive = this.timeAlive
         };
         JobHandle handler = checkLifeStatus.Schedule(NumberOfCubes, 124);
-        NativeArray<int> indexes =
+
         for (int i = 0; i < NumberOfCubes; i++) {
             if (timeAlive[i] < lifeSpan[i])
                 continue;
